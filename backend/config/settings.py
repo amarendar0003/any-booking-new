@@ -283,7 +283,14 @@ CORS_ALLOW_ALL_ORIGINS = DEBUG
 FIREBASE_APP_CHECK_PROJECT_NUMBER = env('FIREBASE_APP_CHECK_PROJECT_NUMBER', default='')
 APP_CHECK_ENFORCED = bool(FIREBASE_APP_CHECK_PROJECT_NUMBER)
 
-# settings.py to allow public access to media files in GCS without signed URLs. This is necessary for
+# ── Firebase Auth (verifies Firebase ID tokens on protected endpoints) ───────────
+# Set FIREBASE_AUTH_PROJECT_ID to enable verification. When set, the /api/
+# booking endpoint expects an X-Firebase-ID-Token header and validates the
+# token's phone_number claim against customer_phone. Empty by default so
+# local dev/CI need no Firebase project.
+FIREBASE_AUTH_PROJECT_ID = env('FIREBASE_AUTH_PROJECT_ID', default='')
+FIREBASE_AUTH_ENFORCED = bool(FIREBASE_AUTH_PROJECT_ID)
+
 GS_QUERYSTRING_AUTH = False
 
 

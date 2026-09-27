@@ -1,6 +1,7 @@
 import json
 import sys
 
+from django.conf import settings
 from django.utils import timezone
 from rest_framework import generics, status
 from rest_framework.decorators import api_view, permission_classes
@@ -17,6 +18,7 @@ from services.views import match_location
 from bookings.models import Booking
 from bookings.emails import send_booking_received
 from analytics.models import UsageEvent
+from config.firebase_auth import verify_firebase_id_token
 
 from .serializers import (
     CategorySerializer, CitySerializer, CountrySerializer, StateSerializer,
@@ -262,22 +264,42 @@ def booking_create(request):
     POST /api/bookings/
     Creates a booking. No auth required (public customers).
 
-    TODO: the Flutter booking form now does client-side phone OTP
-    verification via Firebase Phone Auth (lib/main.dart, _BookingFormPageState)
-    before allowing submit, but this endpoint doesn't check anything
-    server-side — customer_phone is trusted as-is. To make OTP verification
-    mean something, have the client send its Firebase ID token here and
-    verify (via Firebase Admin SDK or manual JWKS check, same shape as
-    config/app_check.py) that the token's phone number matches
-    customer_phone before saving.
+    When FIREBASE_AUTH_ENFORCED is True, the client must send an
+    X-Firebase-ID-Token header containing a Firebase ID token from the
+    Flutter app's phone OTP flow. The phone_number claim in that token must
+    match the submitted customer_phone.
     """
+    if settings.FIREBASE_AUTH_ENFORCED:
+        id_token = request.headers.get('X-Firebase-ID-Token')
+        if not id_token:
+            return Response(
+                {'detail': 'Missing Firebase ID token.'},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+        try:
+            claims = verify_firebase_id_token(id_token)
+        except Exception as exc:
+            return Response(
+                {'detail': f'Invalid Firebase ID token: {exc}'},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
     serializer = BookingCreateSerializer(data=request.data)
     if serializer.is_valid():
         booking = serializer.save()
+        if settings.FIREBASE_AUTH_ENFORCED:
+            token_phone = (claims.get('phone_number') or '').replace(' ', '')
+            submitted_phone = (booking.customer_phone or '').replace(' ', '')
+            if not token_phone or token_phone != submitted_phone:
+                booking.delete()
+                return Response(
+                    {'customer_phone': 'Phone number does not match verified Firebase account.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
         try:
             send_booking_received(booking)
         except Exception:
-            pass  # Don't fail the booking if email fails
+            pass
         return Response(
             BookingDetailSerializer(booking).data,
             status=status.HTTP_201_CREATED,

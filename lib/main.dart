@@ -628,11 +628,17 @@ class BookingApi {
     required int guestCount,
     required double totalAmount,
     String specialRequests = '',
+    String? firebaseIdToken,
   }) async {
     try {
+      final extra = <String, String>{
+        'Content-Type': 'application/json',
+        if (firebaseIdToken != null && firebaseIdToken.isNotEmpty)
+          'X-Firebase-ID-Token': firebaseIdToken,
+      };
       final response = await http.post(
         Uri.parse('$normalizedApiBaseUrl/bookings/'),
-        headers: await _headers({'Content-Type': 'application/json'}),
+        headers: await _headers(extra),
         body: jsonEncode({
           'service_slug': serviceSlug,
           'customer_name': customerName,
@@ -3579,6 +3585,19 @@ class _BookingFormPageState extends State<BookingFormPage> {
       return;
     }
 
+    String? firebaseIdToken;
+    if (firebaseConfigured) {
+      try {
+        final user = FirebaseAuth.instance.currentUser;
+        if (user != null) {
+          firebaseIdToken = await user.getIdToken();
+        }
+      } on Exception {
+        // If we can't get a token, continue without it; the backend will
+        // reject if enforcement is enabled.
+      }
+    }
+
     setState(() {
       submitting = true;
       result = null;
@@ -3592,6 +3611,7 @@ class _BookingFormPageState extends State<BookingFormPage> {
       guestCount: int.parse(guestCountController.text),
       totalAmount: double.parse(amountController.text),
       specialRequests: requestsController.text.trim(),
+      firebaseIdToken: firebaseIdToken,
     );
     if (mounted) {
       setState(() {
